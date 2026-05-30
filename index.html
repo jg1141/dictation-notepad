@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dictation Notepad</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 2rem 1rem;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+        }
+        p {
+            color: #666;
+            font-size: 0.9rem;
+            margin: 0;
+            line-height: 1.5;
+        }
+        .shortcuts {
+            background-color: #e9ecef;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+        .input-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            box-sizing: border-box;
+            border: 2px solid #ccc;
+            border-radius: 4px;
+            font-size: 1rem;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        textarea:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+        .status {
+            position: sticky;
+            bottom: 0;
+            background-color: white;
+            padding: 1rem 0 0 0;
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: #28a745;
+            min-height: 1.2rem;
+            font-weight: bold;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Dictation Notepad</h1>
+    <div class="shortcuts">
+        <p>⌨️ <strong>Shortcuts:</strong></p>
+        <p>• <strong>Escape (Esc):</strong> Read active field aloud / Stop reading</p>
+        <p>• <strong>F1:</strong> Download all fields combined (separated by 2 lines)</p>
+        <p>• <strong>F2:</strong> Create a new paragraph field</p>
+    </div>
+    
+    <div id="inputList" class="input-list">
+        <textarea placeholder="Type your first paragraph here..."></textarea>
+    </div>
+    
+    <div id="statusMessage" class="status"></div>
+</div>
+
+<script>
+    const inputList = document.getElementById('inputList');
+    const statusMessage = document.getElementById('statusMessage');
+
+    // Automatically focus the initial textarea
+    if (inputList.firstElementChild) {
+        inputList.firstElementChild.focus();
+    }
+
+    // Helper function for quick text-to-speech announcements
+    function speakText(text, onStartCallback = null, onEndCallback = null) {
+        if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        
+        if (onStartCallback) utterance.onstart = onStartCallback;
+        if (onEndCallback) utterance.onend = onEndCallback;
+        
+        window.speechSynthesis.speak(utterance);
+    }
+
+    window.addEventListener('keydown', (event) => {
+        
+        // --- ESCAPE KEY: SPEAK ACTIVE FIELD ---
+        if (event.key === 'Escape' || event.keyCode === 27) {
+            event.preventDefault(); 
+            
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                updateStatus("Speech stopped.");
+                return;
+            }
+
+            // Target only the element currently focused by the user
+            const activeTextarea = document.activeElement;
+            if (activeTextarea && activeTextarea.tagName === 'TEXTAREA') {
+                const textToSpeak = activeTextarea.value.trim();
+
+                if (textToSpeak === "") {
+                    updateStatus("Current field is empty!");
+                    return;
+                }
+
+                speakText(
+                    textToSpeak, 
+                    () => updateStatus("Reading active paragraph... (Press Esc to stop)"),
+                    () => updateStatus("Finished reading paragraph.")
+                );
+            } else {
+                updateStatus("Click inside a text box first to read it.");
+            }
+        }
+
+        // --- F1 KEY: DOWNLOAD ALL FIELDS ---
+        if (event.key === 'F1' || event.keyCode === 112) {
+            event.preventDefault(); 
+
+            // Grab all textareas currently on the page
+            const textareas = inputList.querySelectorAll('textarea');
+            let combinedText = "";
+
+            // Concatenate them with two carriage returns (\r\n\r\n)
+            textareas.forEach((textarea, index) => {
+                combinedText += textarea.value;
+                if (index < textareas.length - 1) {
+                    combinedText += "\r\n\r\n"; 
+                }
+            });
+
+            if (combinedText.trim() === "") {
+                updateStatus("Cannot download because all fields are empty!");
+                return;
+            }
+
+            // Say "Downloading dictation", then trigger file download when speech finishes/starts
+            speakText("Downloading dictation", () => {
+                updateStatus("Downloading dictation...");
+                downloadTextFile(combinedText, "dictation-export.txt");
+            });
+        }
+
+        // --- F2 KEY: SPAWN NEW TEXTINPUT ---
+        if (event.key === 'F2' || event.keyCode === 113) {
+            event.preventDefault();
+
+            // Create new textarea element
+            const newTextarea = document.createElement('textarea');
+            newTextarea.placeholder = "Type your next paragraph here...";
+            
+            // Append it to the list
+            inputList.appendChild(newTextarea);
+            
+            // Shift user focus to the newly created box
+            newTextarea.focus();
+            
+            // Announce "New paragraph"
+            speakText("New paragraph", () => {
+                updateStatus("Added new paragraph field.");
+            });
+        }
+    });
+
+    // File download mechanics
+    function downloadTextFile(text, filename) {
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url); 
+    }
+
+    function updateStatus(msg) {
+        statusMessage.textContent = msg;
+    }
+</script>
+
+</body>
+</html>
