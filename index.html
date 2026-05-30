@@ -86,25 +86,36 @@
         <p>• <strong>Escape (Esc):</strong> Read active field aloud / Stop reading</p>
         <p>• <strong>F1:</strong> Download all fields combined (separated by 2 lines)</p>
         <p>• <strong>F2:</strong> Create a new paragraph field</p>
+        <p>• <strong>F4:</strong> Clear notepad (Blocked if changes were made after downloading)</p>
     </div>
     
     <div id="inputList" class="input-list">
         <textarea placeholder="Type your first paragraph here..."></textarea>
     </div>
     
-    <div id="statusMessage" class="status"></div>
+    <div id="statusMessage" class="status">Ready.</div>
 </div>
 
 <script>
     const inputList = document.getElementById('inputList');
     const statusMessage = document.getElementById('statusMessage');
+    
+    // Tracks if there are unsaved changes since the last download
+    let isDirty = false;
 
     // Automatically focus the initial textarea
     if (inputList.firstElementChild) {
         inputList.firstElementChild.focus();
     }
 
-    // Helper function for quick text-to-speech announcements
+    // Monitor changes across all text boxes (including dynamically spawned ones)
+    inputList.addEventListener('input', (event) => {
+        if (event.target.tagName === 'TEXTAREA') {
+            isDirty = true;
+        }
+    });
+
+    // Standard text-to-speech engine wrapper
     function speakText(text, onStartCallback = null, onEndCallback = null) {
         if (window.speechSynthesis.speaking) {
             window.speechSynthesis.cancel();
@@ -119,6 +130,7 @@
         window.speechSynthesis.speak(utterance);
     }
 
+    // --- SHORTCUT HOTKEYS ---
     window.addEventListener('keydown', (event) => {
         
         // --- ESCAPE KEY: SPEAK ACTIVE FIELD ---
@@ -131,7 +143,6 @@
                 return;
             }
 
-            // Target only the element currently focused by the user
             const activeTextarea = document.activeElement;
             if (activeTextarea && activeTextarea.tagName === 'TEXTAREA') {
                 const textToSpeak = activeTextarea.value.trim();
@@ -155,11 +166,9 @@
         if (event.key === 'F1' || event.keyCode === 112) {
             event.preventDefault(); 
 
-            // Grab all textareas currently on the page
             const textareas = inputList.querySelectorAll('textarea');
             let combinedText = "";
 
-            // Concatenate them with two carriage returns (\r\n\r\n)
             textareas.forEach((textarea, index) => {
                 combinedText += textarea.value;
                 if (index < textareas.length - 1) {
@@ -172,10 +181,12 @@
                 return;
             }
 
-            // Say "Downloading dictation", then trigger file download when speech finishes/starts
             speakText("Downloading dictation", () => {
                 updateStatus("Downloading dictation...");
                 downloadTextFile(combinedText, "dictation-export.txt");
+                
+                // CRITICAL: Reset the dirty flag since changes have been safely saved
+                isDirty = false; 
             });
         }
 
@@ -183,24 +194,43 @@
         if (event.key === 'F2' || event.keyCode === 113) {
             event.preventDefault();
 
-            // Create new textarea element
             const newTextarea = document.createElement('textarea');
             newTextarea.placeholder = "Type your next paragraph here...";
             
-            // Append it to the list
             inputList.appendChild(newTextarea);
-            
-            // Shift user focus to the newly created box
             newTextarea.focus();
             
-            // Announce "New paragraph"
             speakText("New paragraph", () => {
                 updateStatus("Added new paragraph field.");
             });
         }
+
+        // --- F4 KEY: CONDITIONAL RESET ---
+        if (event.key === 'F4' || event.keyCode === 115) {
+            event.preventDefault();
+
+            // If changes have been made since the last F1 download
+            if (isDirty) {
+                speakText("Please download your dictation first by pressing F1.");
+                updateStatus("Action blocked: Changes detected since your last download.");
+            } else {
+                // Safe to clear because changes are downloaded (or document is empty)
+                inputList.innerHTML = '';
+                
+                const initialTextarea = document.createElement('textarea');
+                initialTextarea.placeholder = "Type your first paragraph here...";
+                inputList.appendChild(initialTextarea);
+                initialTextarea.focus();
+
+                speakText("New dictation started", () => {
+                    updateStatus("Notepad cleared. Ready for new dictation.");
+                });
+                
+                isDirty = false; // Fresh start is clean
+            }
+        }
     });
 
-    // File download mechanics
     function downloadTextFile(text, filename) {
         const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
         const link = document.createElement("a");
